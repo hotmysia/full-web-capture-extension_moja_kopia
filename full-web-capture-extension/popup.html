@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html>
+  <head>
+      <meta charset=utf-8>
+      <title>Full page screen catpure</title>
+      <!-- there are rendering bugs when styles aren't inline... -->
+      <style>
+body {
+    font: normal 12px/16px helvetica,aria,sans-serif;
+}
+div,p { margin: 0; padding: 0; }
+
+.clr { overflow: hidden; }
+.left { float: left; }
+.right { float: right; }
+
+a {
+	color: #3681b3;
+	text-decoration: none;
+}
+a:hover { color: #265c80; }
+a:active { color: #000; }
+
+#wrap {
+    width: 300px;
+    padding-top: 9px;
+    font-size: 12px;
+    color: #888;
+}
+
+#wrap>div { display: none; }
+#wrap>#loading { display: block; }
+
+#loading .loader {
+    position: relative;
+    border-top: 12px dotted #000;
+    height: 9px;
+}
+
+#loading .bar {
+    position: absolute;
+    top: -21px;
+    left: 0;
+    height: 30px;
+    width: 0%;
+    background: #fff url(loader.gif) scroll no-repeat center right;
+}
+p { word-wrap: break-word; }
+
+.warning {
+    margin-top: 1em;
+    color: #aa8d3b;
+    font-style: italic;
+    font-weight: bold;
+}
+.error {
+    margin-top: 1em;
+    font-weight: bold;
+    color: #b33;
+}
+.error a {
+    color: #f75;
+}
+
+/* Thêm style cho màn hình thành công và nút tải xuống */
+#success {
+    margin-top: 1em;
+    padding: 15px;
+    background-color: #f8f9fa;
+    border-radius: 6px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+#success h3 {
+    color: #4CAF50;
+    margin-top: 0;
+    margin-bottom: 15px;
+    font-size: 16px;
+}
+#success input[type="text"] {
+    width: 100%;
+    padding: 8px;
+    margin-bottom: 12px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    box-sizing: border-box;
+}
+#success .download-btn {
+    display: inline-block;
+    background-color: #4CAF50;
+    color: white;
+    padding: 8px 16px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: bold;
+    text-align: center;
+    transition: background-color 0.3s;
+}
+#success .download-btn:hover {
+    background-color: #45a049;
+}
+.file-options {
+    margin-bottom: 15px;
+}
+.file-options label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: bold;
+    color: #555;
+}
+.note {
+    font-size: 11px;
+    color: #666;
+    margin-bottom: 12px;
+    font-style: italic;
+}
+      </style>
+  </head>
+  <body>
+      <div id="wrap">
+          <div id="loading">
+              <div class="loader"><div class="bar" id="bar"></div></div>
+              <div class="clr">
+                  <br>
+                  <p>
+                      Screen capture in progress, your finished image will open in a
+                      new window once completed. Please wait for the progress bar to
+                      finish.
+                  </p>
+              </div>
+          </div>
+          
+          <!-- Thêm màn hình thành công -->
+          <div id="success">
+              <h3>Chụp màn hình thành công! (VER 1.1)</h3>
+              <div class="file-options">
+                  <label for="custom-filename">Tên file:</label>
+                  <input type="text" id="custom-filename" placeholder="Nhập tên file mới">
+              </div>
+              <p class="note">Hình ảnh đã được mở trong tab mới. Bạn cũng có thể tải xuống với tên tùy chỉnh.</p>
+              <button id="download-btn" class="download-btn">Tải xuống</button>
+          </div>
+          
+          <div id="split-image" class="warning">
+              Note: your page is too large for the Chrome browser to capture as
+              one image. It will be split into <span id="screenshot-count">multiple</span>
+              images.
+          </div>
+          <div id="invalid" class="error">
+              Full Page Screen Capture cannot be run on this type of URL
+              because of Google Chrome Web Store policies. Try
+              another page on the web.
+          </div>
+          <div id="uh-oh" class="error">
+              Uh oh, something went wrong! Try reloading the page,
+              verifying javascript is enabled,
+              and running this again.
+              <br><br>
+              <strong>Đối với trang web dài:</strong> Extension đang thử lại tự động. 
+              Nếu trang quá dài (>50,000px), hãy thử scroll xuống một phần rồi chụp lại.
+              <br><br>
+              If the problem persists, please report the error in the
+              <a href="https://chrome.google.com/webstore/support/fdpohaocaechififmbbbbbknoalclacl?hl=en&gl=US#bug">Chrome webstore</a>.
+              Please include the URL you tried it on and the
+              version of Chrome.
+          </div>
+          
+          <div id="long-page" class="warning" style="display: none;">
+              <strong>⚠️ Trang web rất dài!</strong><br>
+              Extension đang xử lý trang có kích thước lớn. Quá trình này có thể mất 
+              vài phút. Vui lòng kiên nhẫn và không đóng tab này.
+              <br><br>
+              <em>Mẹo:</em> Để tăng tốc độ, bạn có thể scroll đến phần cần chụp 
+              trước khi sử dụng extension.
+          </div>
+      </div>
+
+      <!-- JavaScript and HTML must be in separate files for security. -->
+      <script src="api.js"></script>
+      <script src="popup.js"></script>
+  </body>
+</html>
