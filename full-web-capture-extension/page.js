@@ -1,6 +1,6 @@
-var CAPTURE_DELAY = 300;
-var MAX_RETRIES = 3;
-var CLEANUP_TIMEOUT = 5000;
+var CAPTURE_DELAY = 50;    // Mặc định nhanh: 50ms
+var MAX_RETRIES = 2;       // Giảm xuống 2 lần thử
+var CLEANUP_TIMEOUT = 2000; // Nhanh: 2000ms
 
 function onMessage(data, sender, callback) {
     if (data.msg === 'scrollPage') {
@@ -28,14 +28,14 @@ function isPageLoading() {
 }
 
 function waitForPageReady(callback, timeout) {
-    timeout = timeout || 10000;
+    timeout = timeout || 3000;  // Giảm xuống 3s
     var startTime = Date.now();
     
     function checkReady() {
         if (!isPageLoading() || (Date.now() - startTime) > timeout) {
             callback();
         } else {
-            setTimeout(checkReady, 100);
+            setTimeout(checkReady, 25);  // Giảm xuống 25ms cho tốc độ tối đa
         }
     }
     
@@ -43,6 +43,19 @@ function waitForPageReady(callback, timeout) {
 }
 
 function getPositions(callback) {
+    // Send initial progress immediately
+    chrome.runtime.sendMessage({
+        msg: 'capture',
+        x: 0,
+        y: 0,
+        complete: 0.05,
+        windowWidth: window.innerWidth,
+        totalWidth: 0,
+        totalHeight: 0,
+        devicePixelRatio: window.devicePixelRatio,
+        initializing: true
+    });
+    
     waitForPageReady(function() {
         performCapture(callback);
     });
@@ -83,7 +96,8 @@ function performCapture(callback) {
         xDelta = windowWidth,
         yPos = fullHeight - windowHeight,
         xPos,
-        numArrangements;
+        numArrangements,
+        startTime = Date.now();
 
     if (fullWidth <= xDelta + 1) {
         fullWidth = xDelta;
@@ -138,6 +152,16 @@ function performCapture(callback) {
 
         var next = arrangements.shift(),
             x = next[0], y = next[1];
+            
+        // Calculate more realistic progress based on both position and time
+        var baseProgress = (numArrangements - arrangements.length) / numArrangements;
+        var timeProgress = Math.min((Date.now() - startTime) / (numArrangements * 150), 1); // Estimate 150ms per capture
+        var adjustedProgress = (baseProgress * 0.7) + (timeProgress * 0.3); // Weight actual progress more
+        
+        // Don't let progress exceed certain thresholds too early
+        if (adjustedProgress > 0.9 && arrangements.length > 0) {
+            adjustedProgress = 0.9;
+        }
 
         try {
             window.scrollTo(x, y);
@@ -154,7 +178,7 @@ function performCapture(callback) {
                     msg: 'capture',
                     x: actualX,
                     y: actualY,
-                    complete: (numArrangements-arrangements.length)/numArrangements,
+                    complete: adjustedProgress,
                     windowWidth: windowWidth,
                     totalWidth: fullWidth,
                     totalHeight: fullHeight,
@@ -178,7 +202,7 @@ function performCapture(callback) {
                                 retryCount++;
                                 console.warn('Capture failed, retrying... (' + retryCount + '/' + MAX_RETRIES + ')');
                                 arrangements.unshift([x, y]);
-                                setTimeout(processArrangements, 1000);
+                                setTimeout(processArrangements, 500);
                             } else {
                                 console.error('Max retries reached, giving up on this arrangement');
                                 cleanUp();
@@ -187,7 +211,7 @@ function performCapture(callback) {
                     });
 
                 }, CAPTURE_DELAY);
-            }, 100);
+            }, 25);  // Giảm xuống 25ms cho tốc độ tối đa
             
         } catch (e) {
             console.error('Error during scroll:', e);

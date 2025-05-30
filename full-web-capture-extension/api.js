@@ -44,8 +44,20 @@ window.CaptureAPI = (function() {
 
 
     function capture(data, screenshots, sendResponse, splitnotifier) {
+        // Get current configuration options
+        const captureOptions = typeof ScreenshotConfig !== 'undefined' ? 
+            ScreenshotConfig.toChromeOptions() : {format: 'png'};
+            
+        if (SCREENSHOT_OPTIONS.format === 'jpeg' && !captureOptions.quality) {
+            captureOptions.quality = SCREENSHOT_OPTIONS.quality;
+        }
+        
+        if (typeof ScreenshotConfig !== 'undefined' && ScreenshotConfig.getConfig().debugMode) {
+            console.log('Capturing with options:', captureOptions);
+        }
+        
         chrome.tabs.captureVisibleTab(
-            null, {format: 'png'}, function(dataURI) {
+            null, captureOptions, function(dataURI) {
                 if (dataURI) {
                     var image = new Image();
                     image.onload = function() {
@@ -88,11 +100,20 @@ window.CaptureAPI = (function() {
                             );
                         });
 
+                        // Enhanced success logging
+                        if (typeof ScreenshotConfig !== 'undefined' && ScreenshotConfig.getConfig().debugMode) {
+                            console.log('Capture successful:', data);
+                        }
+
                         // send back log data for debugging (but keep it truthy to
                         // indicate success)
                         sendResponse(JSON.stringify(data, null, 4) || true);
                     };
                     image.src = dataURI;
+                } else {
+                    if (typeof ScreenshotConfig !== 'undefined' && ScreenshotConfig.getConfig().debugMode) {
+                        console.error('No dataURI received from captureVisibleTab');
+                    }
                 }
             });
     }
@@ -234,11 +255,99 @@ window.CaptureAPI = (function() {
     }
 
 
+    // Enhanced error handling and options based on Playwright patterns
+    var SCREENSHOT_OPTIONS = {
+        format: 'png',
+        quality: 90,
+        timeout: 15000,      // Nhanh: 15s
+        retryAttempts: 2,    // Nhanh: 2 lần thử
+        errorScreenshot: true
+    };
+
+    // Load configuration from ScreenshotConfig if available
+    function loadEnhancedConfig() {
+        if (typeof ScreenshotConfig !== 'undefined') {
+            ScreenshotConfig.loadConfig(function(config) {
+                SCREENSHOT_OPTIONS = Object.assign(SCREENSHOT_OPTIONS, {
+                    format: config.format,
+                    quality: config.quality,
+                    timeout: config.timeout,
+                    retryAttempts: config.retryAttempts,
+                    errorScreenshot: config.errorScreenshot
+                });
+                
+                if (config.debugMode) {
+                    console.log('API using enhanced config:', SCREENSHOT_OPTIONS);
+                }
+            });
+        }
+    }
+
+    // Initialize enhanced configuration
+    loadEnhancedConfig();
+
+    // Enhanced error handling with screenshot capture
+    function handleCaptureError(error, tab, callback, errback) {
+        console.error('Capture error:', error);
+        
+        // Capture error screenshot if possible
+        if (SCREENSHOT_OPTIONS.errorScreenshot && tab) {
+            try {
+                const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+                const errorFilename = `error_screenshot_${timestamp}.png`;
+                
+                chrome.tabs.captureVisibleTab(null, {format: 'png'}, function(dataURI) {
+                    if (dataURI) {
+                        // Convert to blob and save error screenshot
+                        const blob = dataURIToBlob(dataURI);
+                        saveErrorScreenshot(blob, errorFilename);
+                    }
+                });
+            } catch (screenshotError) {
+                console.error('Failed to capture error screenshot:', screenshotError);
+            }
+        }
+        
+        if (errback) {
+            errback(error);
+        }
+    }
+
+    // Convert dataURI to blob for error screenshots
+    function dataURIToBlob(dataURI) {
+        const byteString = atob(dataURI.split(',')[1]);
+        const mimeString = dataURI.split(',')[0].split(':')[1].split(';')[0];
+        const ab = new ArrayBuffer(byteString.length);
+        const ia = new Uint8Array(ab);
+        for (let i = 0; i < byteString.length; i++) {
+            ia[i] = byteString.charCodeAt(i);
+        }
+        return new Blob([ab], {type: mimeString});
+    }
+
+    // Save error screenshot with timestamp naming
+    function saveErrorScreenshot(blob, filename) {
+        const size = blob.size + (1024 / 2);
+        const reqFileSystem = window.requestFileSystem || window.webkitRequestFileSystem;
+        
+        reqFileSystem(window.TEMPORARY, size, function(fs) {
+            fs.root.getFile(filename, {create: true}, function(fileEntry) {
+                fileEntry.createWriter(function(fileWriter) {
+                    fileWriter.onwriteend = function() {
+                        console.log('Error screenshot saved:', filename);
+                    };
+                    fileWriter.write(blob);
+                });
+            });
+        });
+    }
+
     function captureToBlobs(tab, callback, errback, progress, splitnotifier) {
         var loaded = false,
             screenshots = [],
-            timeout = 10000, // Tăng timeout lên 10 giây cho trang dài
+            timeout = SCREENSHOT_OPTIONS.timeout,
             timedOut = false,
+            retryCount = 0,
             noop = function() {};
 
         callback = callback || noop;
@@ -246,62 +355,103 @@ window.CaptureAPI = (function() {
         progress = progress || noop;
 
         if (!isValidUrl(tab.url)) {
-            errback('invalid url'); // TODO errors
+            handleCaptureError('invalid url', tab, callback, errback);
+            return;
         }
 
-        // TODO will this stack up if run multiple times? (I think it will get cleared?)
-        chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
-            if (request.msg === 'capture') {
-                progress(request.complete);
-                capture(request, screenshots, sendResponse, splitnotifier);
+        // Enhanced retry logic with exponential backoff
+        function attemptCapture() {
+            chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
+                if (request.msg === 'capture') {
+                    progress(request.complete);
+                    
+                    // Handle initial progress messages differently
+                    if (request.initializing) {
+                        sendResponse(true);
+                        return true;
+                    }
+                    
+                    capture(request, screenshots, sendResponse, splitnotifier);
+                    return true;
+                } else {
+                    console.error('Unknown message received from content script: ' + request.msg);
+                    if (retryCount < SCREENSHOT_OPTIONS.retryAttempts) {
+                        retryCount++;
+                        const retryDelay = Math.pow(2, retryCount) * 250; // Nhanh hơn: 250ms base
+                        console.log(`Retrying capture in ${retryDelay}ms (attempt ${retryCount}/${SCREENSHOT_OPTIONS.retryAttempts})`);
+                        setTimeout(attemptCapture, retryDelay);
+                    } else {
+                        handleCaptureError('max retries exceeded', tab, callback, errback);
+                    }
+                    return false;
+                }
+            });
 
-                // https://developer.chrome.com/extensions/messaging#simple
-                //
-                // If you want to asynchronously use sendResponse, add return true;
-                // to the onMessage event handler.
-                //
-                return true;
-            } else {
-                console.error('Unknown message received from content script: ' + request.msg);
-                errback('internal error');
-                return false;
-            }
-        });
+            chrome.tabs.executeScript(tab.id, {file: 'page.js'}, function() {
+                if (chrome.runtime.lastError) {
+                    console.error('Script execution error:', chrome.runtime.lastError);
+                    if (retryCount < SCREENSHOT_OPTIONS.retryAttempts) {
+                        retryCount++;
+                        setTimeout(attemptCapture, 500);  // Nhanh hơn: 500ms
+                        return;
+                    } else {
+                        handleCaptureError(chrome.runtime.lastError.message, tab, callback, errback);
+                        return;
+                    }
+                }
 
-        chrome.tabs.executeScript(tab.id, {file: 'page.js'}, function() {
-            if (timedOut) {
-                console.error('Timed out too early while waiting for ' +
-                              'chrome.tabs.executeScript. Try increasing the timeout.');
-            } else {
-                loaded = true;
-                progress(0);
+                if (timedOut) {
+                    console.error('Timed out too early while waiting for chrome.tabs.executeScript');
+                    handleCaptureError('execute timeout', tab, callback, errback);
+                } else {
+                    loaded = true;
+                    progress(0);
 
-                initiateCapture(tab, function() {
-                    callback(getBlobs(screenshots));
-                });
-            }
-        });
+                    initiateCapture(tab, function() {
+                        callback(getBlobs(screenshots));
+                    });
+                }
+            });
+        }
+
+        attemptCapture();
 
         window.setTimeout(function() {
             if (!loaded) {
                 timedOut = true;
-                errback('execute timeout');
+                handleCaptureError('execute timeout', tab, callback, errback);
             }
         }, timeout);
     }
 
 
     function captureToFiles(tab, filename, callback, errback, progress, splitnotifier) {
+        progress = progress || function() {};
+        
         captureToBlobs(tab, function(blobs) {
             var i = 0,
                 len = blobs.length,
                 filenames = [];
 
+            // Send progress for blob processing phase (80-95%)
+            progress(0.8);
+
             (function doNext() {
                 saveBlob(blobs[i], filename, i, function(filename) {
                     i++;
                     filenames.push(filename);
-                    i >= len ? callback(filenames) : doNext();
+                    
+                    // Calculate file saving progress (80% to 95%)
+                    var fileProgress = 0.8 + (i / len) * 0.15;
+                    progress(fileProgress);
+                    
+                    if (i >= len) {
+                        // Final progress update before completion
+                        progress(0.98);
+                        callback(filenames);
+                    } else {
+                        doNext();
+                    }
                 }, errback);
             })();
         }, errback, progress, splitnotifier);

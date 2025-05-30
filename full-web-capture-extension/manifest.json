@@ -1,8 +1,8 @@
 {
-  "name": "Full Web Capture",
-  "version": "1.0.0",
+  "name": "Full Web Capture Enhanced",
+  "version": "1.2.0",
   "manifest_version": 2,
-  "description": "Screen capture your current page in entirety and reliably!",
+  "description": "Screen capture your current page in entirety and reliably with advanced options!",
   "browser_action": {
     "default_icon": "icon-999.png",
     "default_popup": "popup.html"
@@ -14,11 +14,20 @@
       }
     }
   },
-  "permissions": [ "activeTab", "storage", "unlimitedStorage", "downloads" ],
+  "permissions": [ 
+    "activeTab", 
+    "storage", 
+    "unlimitedStorage", 
+    "downloads",
+    "tabs"
+  ],
   "web_accessible_resources": [
     "result.html",
     "result.js",
-    "jspdf.min.js"
+    "jspdf.min.js",
+    "screenshot-config.js",
+    "page.js",
+    "assets/images/*"
   ],
   "icons": {
     "16": "icon16-999.png",
